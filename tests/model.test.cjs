@@ -55,3 +55,66 @@ test('same examples give reproducible predictions', () => {
   for (const pair of [[-2, 4], [0, 0], [2, 4]]) { a.train(...pair); b.train(...pair); }
   assert.deepEqual(a.weights(), b.weights());
 });
+
+test('three hidden layers have real matching matrix dimensions', () => {
+  const m = new NeuralNetwork(); m.setStructure('8-6-4');
+  assert.deepEqual(m.architecture, [8, 6, 4]);
+  assert.deepEqual(m.layers.map(l => [l.weights.length, l.weights[0].length]), [[8, 1], [6, 8], [4, 6], [1, 4]]);
+  const before = m.weights(); m.train(0.5, -1);
+  m.layers.forEach((l, i) => assert.notDeepEqual(l.weights, before[i].weights));
+  assert.ok(Math.abs(m.predict(0.5) + 1) < 0.05);
+});
+test('deep network analytic gradients match independent finite differences', () => {
+  const m = new NeuralNetwork(); m.setStructure('4-3');
+  const x = 0.37, y = -0.21, g = m.gradients(x, y), epsilon = 1e-5;
+  const loss = () => (m.forward(x) - y) ** 2;
+  for (let l = 0; l < m.layers.length; l++) {
+    const layer = m.layers[l];
+    for (let i = 0; i < layer.weights.length; i++) {
+      for (let j = 0; j < layer.weights[i].length; j++) {
+        const original = layer.weights[i][j];
+        layer.weights[i][j] = original + epsilon; const plus = loss();
+        layer.weights[i][j] = original - epsilon; const minus = loss();
+        layer.weights[i][j] = original;
+        assert.ok(Math.abs((plus - minus) / (2 * epsilon) - g[l].weights[i][j]) < 1e-6, `weight ${l}/${i}/${j}`);
+      }
+      const original = layer.biases[i];
+      layer.biases[i] = original + epsilon; const plus = loss();
+      layer.biases[i] = original - epsilon; const minus = loss(); layer.biases[i] = original;
+      assert.ok(Math.abs((plus - minus) / (2 * epsilon) - g[l].biases[i]) < 1e-6, `bias ${l}/${i}`);
+    }
+  }
+});
+test('full nested expression and layer traces match actual inference for every supported structure', () => {
+  for (const mode of ['2', '4', '6', '4-3', '6-4', '8-6-4']) {
+    const m = new NeuralNetwork(); m.setStructure(mode); m.train(-2, 3); m.train(2, -1);
+    const expression = new Function('x', 'tanh', `return ${m.functionExpression()};`);
+    for (const x of [-1000, -0.75, 0, 1.5, 1000]) {
+      assert.ok(Math.abs(expression(x, Math.tanh) - m.predict(x)) < 1e-10);
+      const trace = m.forwardTrace(x);
+      assert.equal(trace.output, m.predict(x));
+      assert.equal(trace.layers.length, m.architecture.length + 1);
+      for (let l = 1; l < trace.layers.length; l++) assert.deepEqual(trace.layers[l].inputs, trace.layers[l - 1].outputs);
+    }
+  }
+});
+test('auto selection really changes width and may select nested layers based on observed error', () => {
+  const m = new NeuralNetwork();
+  for (const p of [[-2, 0], [-1, 1], [0, 0], [1, 1], [2, 0]]) m.train(...p);
+  assert.ok(m.architecture.length > 1); assert.equal(m.trials.length, 6);
+  assert.equal(m.lastRounds, 3600);
+  const minimum = Math.min(...m.trials.map(t => t.normalizedLoss));
+  assert.ok(Math.abs(m.loss / m.sy ** 2 - minimum) < 1e-12);
+});
+test('reset after nested learning clears structure, trials, rounds, samples and all parameters', () => {
+  const m = new NeuralNetwork(), initial = JSON.stringify(m);
+  m.setStructure('8-6-4'); m.train(1, -2); m.reset();
+  assert.equal(JSON.stringify(m), initial);
+});
+test('structure choice retrains existing samples and never fabricates extra examples', () => {
+  const m = new NeuralNetwork(); m.train(1, 2); const samples = JSON.stringify(m.samples), epochs = m.epochs;
+  m.setStructure('4-3'); assert.equal(JSON.stringify(m.samples), samples);
+  assert.equal(m.epochs, epochs + 600); assert.deepEqual(m.architecture, [4, 3]);
+  assert.ok(Math.abs(m.predict(1) - 2) < 0.02);
+  const before = JSON.stringify(m); assert.throws(() => m.setStructure('999'), RangeError); assert.equal(JSON.stringify(m), before);
+});

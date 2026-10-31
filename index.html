@@ -16,7 +16,7 @@
   <div class="shell">
     <header class="topbar">
       <a class="brand" href="./index.html" aria-label="学习小机器首页"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>学习小机器<span class="brand-sub">LEARNING MACHINE</span></span></a>
-      <div class="top-actions"><span class="local-tag"><span></span>你的私人实验台</span><button type="button" id="reset" class="reset-button"><span aria-hidden="true">↺</span> 重置</button></div>
+      <div class="top-actions"><span class="local-tag"><span></span>你的私人实验台</span></div>
     </header>
 
     <main>
@@ -29,8 +29,10 @@
         <div class="machine-column">
           <section class="machine-panel" aria-labelledby="machine-title">
             <div class="panel-heading"><h2 id="machine-title"><span class="status-dot"></span> 小机器的脑袋</h2><span id="machine-status" class="machine-status">等待第一组样本</span></div>
+            <div class="architecture-bar"><label for="structure">网络结构</label><select id="structure"><option value="auto">自动调整宽度与层数</option><option value="2">单隐藏层 · 2 节点</option><option value="4">单隐藏层 · 4 节点</option><option value="6">单隐藏层 · 6 节点</option><option value="4-3">双隐藏层 · 4 → 3</option><option value="6-4">双隐藏层 · 6 → 4</option><option value="8-6-4">三隐藏层 · 8 → 6 → 4</option></select><strong id="architecture-label">1 → 2 → 1</strong></div>
             <div id="network" class="network"></div>
-            <div class="machine-caption"><span>输入 <b>1</b><i>→</i> 隐藏节点 <b>6</b><i>→</i> 输出 <b>1</b></span><span><i class="line-key"></i> 连线越粗，权重越大</span></div>
+            <div class="machine-caption"><span id="architecture-caption">1 个隐藏层 · 2 个隐藏节点</span><span><i class="line-key"></i> 连线越粗，权重越大</span></div>
+            <p id="structure-info" class="structure-info">自动模式从小网络开始；误差较大时会尝试更宽或更深的网络。</p>
           </section>
 
           <section class="stats" aria-label="学习状态">
@@ -41,7 +43,7 @@
         </div>
 
         <section class="control-card" aria-labelledby="control-heading">
-          <div class="mode-switch" role="group" aria-label="选择操作模式"><button id="train-mode" type="button" aria-pressed="true"><span aria-hidden="true">✳</span> 训练</button><button id="predict-mode" type="button" aria-pressed="false"><span aria-hidden="true">↗</span> 计算</button></div>
+          <div class="mode-switch" role="group" aria-label="游戏操作"><button type="button" id="reset"><span aria-hidden="true">↺</span> 重置</button><button id="train-mode" type="button" aria-pressed="true"><span aria-hidden="true">✳</span> 训练</button><button id="predict-mode" type="button" aria-pressed="false"><span aria-hidden="true">↗</span> 计算</button></div>
           <div id="train-pane">
             <div class="control-intro"><span class="step-label">01 / TEACH</span><h2 id="control-heading">教它一组数字</h2><p>告诉它输入是什么，正确答案是什么。</p></div>
             <form id="train-form" novalidate>
@@ -65,13 +67,15 @@
       </section>
 
       <section class="details-grid">
-        <section class="chart-card" aria-labelledby="chart-heading"><div class="card-heading"><div><span class="section-index">01</span><h2 id="chart-heading">它眼中的规律</h2></div><div class="legend"><span><i class="curve-key"></i>预测曲线</span><span><i class="point-key"></i>你的样本</span></div></div><div id="chart" class="chart"></div><p class="chart-footnote">观察曲线如何随着你的训练，慢慢靠近样本点。</p></section>
+        <section class="chart-card" aria-labelledby="chart-heading"><div class="card-heading"><div><span class="section-index">01</span><h2 id="chart-heading">它眼中的规律</h2></div><div class="legend"><span><i class="curve-key"></i>预测曲线</span><span><i class="point-key"></i>你的样本</span></div></div><div id="chart" class="chart"></div><p class="chart-footnote">观察曲线如何随着你的训练，慢慢靠近样本点。</p><div class="formula-block"><div class="formula-heading"><h3>当前输出函数</h3><span id="function-status">未训练 · 初始函数</span></div><pre id="function-short"></pre><p>h 是下方各隐藏层的输出；tanh 是节点的非线性函数。简式显示 6 位有效数字。</p><details id="full-function"><summary>展开完整嵌套函数（完整精度）</summary><pre id="function-full"></pre></details></div></section>
         <section class="samples-card" aria-labelledby="samples-heading"><div class="card-heading"><div><span class="section-index">02</span><h2 id="samples-heading">学习笔记</h2></div><span id="sample-badge" class="sample-badge">0 组</span></div><div id="sample-empty" class="sample-empty"><span aria-hidden="true">⊞</span><strong>每个例子，都是一点新知识</strong><p>训练后，你教过的数字会出现在这里。</p></div><div id="sample-table-wrap" class="sample-table-wrap" hidden><table><thead><tr><th>序号</th><th>输入 x</th><th>正确输出 y</th><th>当前预测</th></tr></thead><tbody id="sample-rows"></tbody></table></div><div class="samples-footer"><span class="mini-dot"></span> 相同输入会更新答案，保留最新教法。</div></section>
       </section>
 
+      <section class="mapping-card" aria-labelledby="mapping-heading"><div class="mapping-heading"><div class="card-heading"><div><span class="section-index">03</span><h2 id="mapping-heading">每一层如何映射</h2></div></div><form id="trace-form" novalidate><label for="trace-x">代入 x</label><input id="trace-x" value="0" inputmode="decimal" autocomplete="off" aria-describedby="trace-message"><button type="submit">查看映射 <span aria-hidden="true">→</span></button></form></div><p id="trace-message" role="status" aria-live="polite" class="mapping-description">每层都使用上一层的输出，显示真实权重、偏置和计算结果。</p><div id="layer-mappings" class="layer-mappings"></div></section>
+
       <aside class="how-to"><span class="how-icon" aria-hidden="true">↳</span><div><strong>一个小实验</strong><p>依次教它 <b>0 → 0</b>、<b>1 → 2</b>、<b>2 → 4</b>，再去计算 <b>1.5</b>。它会猜到接近 3 吗？</p></div><button type="button" id="try-example">从第一组开始 <span aria-hidden="true">→</span></button></aside>
     </main>
-    <footer><span>小小样本，大大发现。<span class="footer-version">v1.0.0</span></span><span>真实神经网络 · 刷新或重置会清空学习结果</span></footer>
+    <footer><span>小小样本，大大发现。<span class="footer-version">v1.1.0</span></span><span>真实多层神经网络 · 刷新或重置会清空学习结果</span></footer>
   </div>
   <div id="toast" role="status" aria-live="polite" class="toast" hidden></div>
 </body>

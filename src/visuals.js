@@ -8,32 +8,35 @@
   const svgText = (x, y, text, attrs = '') => `<text x="${x}" y="${y}" ${attrs}>${text}</text>`;
 
   function renderNetwork(container, model, preview) {
-    const x = preview ? preview.x : 0;
-    const h = model.activation(x / model.sx);
-    const ys = [44, 84, 124, 164, 204, 244];
-    const point = { input: [88, 144], hiddenX: 310, output: [532, 144] };
-    let content = '<title>小机器的神经网络</title><desc>一个输入、六个隐藏节点、一个输出。连线表示实际权重，绿色为正、橙色为负；粗细表示绝对值。</desc>';
-    content += '<defs><radialGradient id="nodeGlow"><stop stop-color="#a9d881" stop-opacity=".15"/><stop offset="1" stop-color="#a9d881" stop-opacity="0"/></radialGradient></defs>';
-    for (let j = 0; j < 6; j++) {
-      for (const [weight, ax, ay, bx, by] of [
-        [model.w1[j], point.input[0] + 27, point.input[1], point.hiddenX - 14, ys[j]],
-        [model.w2[j], point.hiddenX + 14, ys[j], point.output[0] - 27, point.output[1]]
-      ]) {
+    const sizes = [1, ...model.architecture, 1];
+    const trace = model.traceNormalized((preview ? preview.x : 0) / model.sx);
+    const nodes = sizes.map((size, l) => Array.from({ length: size }, (_, i) => ({
+      x: 53 + l * 514 / (sizes.length - 1),
+      y: size === 1 ? 140 : 42 + i * 197 / (size - 1),
+      r: l === 0 || l === sizes.length - 1 ? 25 : size > 6 ? 11 : 15
+    })));
+    let content = '<title>实际多层神经网络 ' + sizes.join(' → ') + '</title><desc>每列为真实的一层，连线对应实际权重；绿色为正、橙色为负。隐藏层使用 tanh，输出层为线性变换。</desc>';
+    model.layers.forEach((layer, l) => {
+      layer.weights.forEach((row, i) => row.forEach((weight, j) => {
+        const a = nodes[l][j], b = nodes[l + 1][i];
         const size = Math.min(3.6, 0.5 + Math.abs(weight) * 1.9);
-        const opacity = Math.min(0.8, 0.2 + Math.abs(weight) * 0.5);
-        content += `<path d="M ${ax} ${ay} C ${ax + 76} ${ay},${bx - 76} ${by},${bx} ${by}" fill="none" stroke="${weight >= 0 ? '#a1c786' : '#c3a075'}" stroke-width="${size}" opacity="${opacity}" data-weight="${weight}"><title>权重 ${format(weight)}</title></path>`;
-      }
-    }
-    for (let j = 0; j < 6; j++) {
-      const lightness = 19 + Math.abs(h[j]) * 11;
-      content += `<circle cx="310" cy="${ys[j]}" r="15" fill="hsl(96 20% ${lightness}%)" stroke="#90ad72" stroke-opacity=".65"/><circle cx="310" cy="${ys[j]}" r="3" fill="#c0dda6" opacity="${0.3 + Math.abs(h[j]) * 0.7}"/><title>节点 ${j + 1}：激活 ${format(h[j])}，偏置 ${format(model.b1[j])}</title>`;
-    }
-    for (const [cx, cy, text, label] of [[88, 144, preview ? format(preview.x, 4) : 'x', '输入'], [532, 144, preview ? format(preview.y, 4) : 'y', '输出']]) {
-      content += `<circle cx="${cx}" cy="${cy}" r="53" fill="url(#nodeGlow)"/><circle cx="${cx}" cy="${cy}" r="31" fill="#263e2b" stroke="#b0d38d" stroke-width="1.2"/><circle cx="${cx}" cy="${cy}" r="26" fill="none" stroke="#b0d38d" stroke-opacity=".13"/>`;
-      content += svgText(cx, cy + 5, text, `text-anchor="middle" fill="#d6edb9" font-size="${text.length > 5 ? 10 : text.length > 3 ? 13 : 18}" font-family="Consolas,monospace"`);
-      content += svgText(cx, cy + 57, label, 'text-anchor="middle" fill="#a1b48d" font-size="11"');
-    }
-    container.innerHTML = `<svg viewBox="0 0 620 288" role="img" aria-label="实际权重神经网络">${content}</svg>`;
+        const opacity = Math.min(0.75, 0.15 + Math.abs(weight) * 0.45);
+        const dx = (b.x - a.x) * 0.4;
+        content += '<path d="M ' + (a.x + a.r) + ' ' + a.y + ' C ' + (a.x + dx) + ' ' + a.y + ',' + (b.x - dx) + ' ' + b.y + ',' + (b.x - b.r) + ' ' + b.y + '" fill="none" stroke="' + (weight >= 0 ? '#a1c786' : '#c3a075') + '" stroke-width="' + size + '" opacity="' + opacity + '" data-weight="' + weight + '"><title>层 ' + l + ' 节点 ' + (j + 1) + ' → 层 ' + (l + 1) + ' 节点 ' + (i + 1) + '，权重 ' + format(weight) + '</title></path>';
+      }));
+    });
+    nodes.forEach((layer, l) => {
+      layer.forEach((node, i) => {
+        const endpoint = l === 0 || l === sizes.length - 1;
+        const activation = l === 0 ? (preview ? preview.x : 0) : trace[l - 1].outputs[i] * (l === sizes.length - 1 ? model.sy : 1);
+        const value = endpoint ? (preview ? format(activation, 4) : l === 0 ? 'x' : 'y') : format(activation, 2);
+        content += '<g data-layer="' + l + '" data-node="' + i + '"><circle cx="' + node.x + '" cy="' + node.y + '" r="' + node.r + '" fill="' + (endpoint ? '#2e4530' : '#263c2c') + '" stroke="#a4c583" stroke-opacity="' + (endpoint ? 1 : 0.7) + '"/><title>' + (l === 0 ? '输入' : l === sizes.length - 1 ? '输出' : '隐藏层 ' + l + ' 节点 ' + (i + 1)) + '：' + format(activation) + '</title>';
+        content += svgText(node.x, node.y + (endpoint ? 5 : 3), value, 'text-anchor="middle" fill="#d3e7b6" font-size="' + (endpoint ? value.length > 4 ? 10 : 16 : sizes[l] > 6 ? 6 : 8) + '" font-family="Consolas,monospace"') + '</g>';
+      });
+      const label = l === 0 ? '输入' : l === sizes.length - 1 ? '输出' : '隐藏层 ' + l + ' · ' + sizes[l];
+      content += svgText(layer[0].x, 278, label, 'text-anchor="middle" fill="#a1b48d" font-size="10"');
+    });
+    container.innerHTML = '<svg viewBox="0 0 620 294" role="img" aria-label="实际网络结构 ' + sizes.join(' → ') + '">' + content + '</svg>';
   }
 
   function renderChart(container, model, prediction) {
