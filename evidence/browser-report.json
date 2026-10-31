@@ -1,0 +1,141 @@
+{
+  "date": "2026-10-31T20:10:59.116Z",
+  "playwright": "1.62.1",
+  "checks": [
+    {
+      "id": "I01",
+      "name": "Desktop initial state and reset/train/calculate in one row"
+    },
+    {
+      "id": "I02",
+      "name": "Empty training input rejected without mutation"
+    },
+    {
+      "id": "I03",
+      "name": "Untrained calculation gives an actionable error"
+    },
+    {
+      "id": "I04",
+      "name": "Example buttons only fill fields"
+    },
+    {
+      "id": "I05",
+      "name": "Training learns all samples and automatically changes real network width"
+    },
+    {
+      "id": "I06",
+      "name": "Prediction of 1.5 is 3.05589; weights/samples/epochs unchanged"
+    },
+    {
+      "id": "I07",
+      "name": "Output function appears below the prediction curve"
+    },
+    {
+      "id": "I08",
+      "name": "Visible full-precision nested function independently reproduces prediction"
+    },
+    {
+      "id": "I09",
+      "name": "Each layer mapping ends at the actual predicted value"
+    },
+    {
+      "id": "I10",
+      "name": "Independent layer probing does not train or change parameters"
+    },
+    {
+      "id": "I11",
+      "name": "Three real hidden layers change diagram to 20 nodes, 84 edges and six mapping blocks"
+    },
+    {
+      "id": "I12",
+      "name": "Desktop full-page screenshot captured for three hidden layers"
+    },
+    {
+      "id": "I13",
+      "name": "Reset clears all learned state, inputs, prediction and nested architecture"
+    },
+    {
+      "id": "I14",
+      "name": "Keyboard Enter supports negative decimals and duplicate target replacement"
+    },
+    {
+      "id": "I15",
+      "name": "Out-of-range input is rejected atomically"
+    },
+    {
+      "id": "I16",
+      "name": "390px real touch training/calculation with all three actions on one row"
+    },
+    {
+      "id": "I17",
+      "name": "Mobile multilayer formulas and mapping layout have no horizontal page overflow"
+    },
+    {
+      "id": "I18",
+      "name": "Mobile touch reset restores initial model"
+    },
+    {
+      "id": "I19",
+      "name": "320px narrow viewport keeps all actions on one row without overflow"
+    },
+    {
+      "id": "I20",
+      "name": "Built game works directly over file:// without a server"
+    },
+    {
+      "id": "I21",
+      "name": "Custom four hidden layers and two input/output endpoints have real matching nodes, edges and fields"
+    },
+    {
+      "id": "I22",
+      "name": "Four-layer network actually trains on vector samples without merging different second inputs"
+    },
+    {
+      "id": "I23",
+      "name": "Vector calculation returns two learned outputs and leaves every parameter unchanged"
+    },
+    {
+      "id": "I24",
+      "name": "Both displayed full functions and all final layer mappings independently match vector predictions"
+    },
+    {
+      "id": "I25",
+      "name": "Multidimensional curve uses selected axes and only samples matching fixed input conditions"
+    },
+    {
+      "id": "I26",
+      "name": "Missing vector component is rejected before any training mutation"
+    },
+    {
+      "id": "I27",
+      "name": "Changing hidden depth alone preserves vector training samples"
+    },
+    {
+      "id": "I28",
+      "name": "Applying changed dimensions visibly warns and clears incompatible data, rounds and predictions"
+    },
+    {
+      "id": "I29",
+      "name": "Invalid custom node count is rejected atomically"
+    },
+    {
+      "id": "I30",
+      "name": "Complete reset restores scalar dimensions, auto depth and every dynamic form"
+    },
+    {
+      "id": "I31",
+      "name": "Real mobile touch supports four inputs, four outputs and four layers at 390px and 320px without page overflow"
+    },
+    {
+      "id": "I32",
+      "name": "Desktop screenshot records two inputs, two outputs, four real hidden layers and two functions"
+    },
+    {
+      "id": "I33",
+      "name": "Zero browser errors and zero external requests"
+    }
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "status": "passed"
+}
