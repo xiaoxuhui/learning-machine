@@ -65,10 +65,45 @@
     }
   }
   function syncConfig() {
+    const automatic = model.structureMode === 'auto';
+    $('auto-structure').checked = automatic;
+    $('manual-presets').hidden = automatic; $('manual-layer-setting').hidden = automatic;
+    $('resume-auto').hidden = automatic;
+    $('network-config').classList.toggle('automatic', automatic);
     $('input-count').value = model.inputSize; $('output-count').value = model.outputSize;
     $('hidden-count').value = model.structureMode === 'auto' ? 'auto' : model.architecture.length;
     layerWidthFields(model.structureMode === 'auto' ? 0 : model.architecture.length);
     $('structure').value = Array.from($('structure').options).some(o => o.value === model.structureMode) ? model.structureMode : 'custom';
+  }
+  const actionNames = { deepen: '自动加层', shallow: '自动减层', widen: '自动增加节点', narrow: '自动减少节点', reshape: '自动调整形状', keep: '保持当前结构' };
+  function renderDecision() {
+    const decision = model.decision;
+    $('structure-trials').replaceChildren(); $('shape-history').replaceChildren();
+    $('structure-comparison').hidden = !decision; $('shape-history').hidden = !model.shapeHistory.length;
+    if (!decision) {
+      $('decision-action').textContent = model.structureMode === 'auto' ? '自动进化已开启' : '结构由你固定';
+      $('decision-shape').textContent = model.structureMode === 'auto' ? '隐藏层数和节点由机器决定' : model.architecture.join(' → ');
+      $('decision-reason').textContent = '训练后显示真实的结构选择和各候选误差。输入输出数量由你的任务决定。';
+      return;
+    }
+    $('decision-action').textContent = decision.mode === 'auto' ? actionNames[decision.action] : '手动固定结构';
+    $('decision-shape').textContent = decision.from.join(' → ') + '  ⇒  ' + decision.to.join(' → ');
+    $('decision-reason').textContent = decision.reason === 'simplest-meeting-target'
+      ? '实际比较了 ' + decision.tested + ' 种结构，选择误差达标且参数最少的一种。更深不一定更好。'
+      : decision.reason === 'lowest-error' ? '实际比较了 ' + decision.tested + ' 种结构，暂时都未达到误差目标；选择其中误差最低的一种。'
+        : '你已明确固定结构。点击“交还机器决定”即可自动比较层数与节点，不会删除样本。';
+    model.trials.forEach(trial => {
+      const row = document.createElement('tr'); row.dataset.selected = trial.selected;
+      for (const value of [trial.architecture.join(' → '), trial.parameterCount, format(trial.normalizedLoss, 4), trial.selected ? '采用' : '']) {
+        const cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell);
+      }
+      $('structure-trials').appendChild(row);
+    });
+    [...model.shapeHistory].reverse().forEach(item => {
+      const row = document.createElement('li'); row.dataset.action = item.action;
+      row.textContent = (item.mode === 'auto' ? actionNames[item.action] : '手动固定') + '：' + item.from.join(' → ') + ' ⇒ ' + item.to.join(' → ');
+      $('shape-history').appendChild(row);
+    });
   }
   function setMode(mode, focus = false) {
     const isTrain = mode === 'train';
@@ -124,8 +159,8 @@
     $('architecture-label').textContent = shape;
     $('architecture-caption').textContent = model.inputSize + ' 输入 · ' + model.architecture.length + ' 隐藏层 · ' + model.outputSize + ' 输出';
     $('structure-info').textContent = model.structureMode === 'auto'
-      ? !count ? '自动从单隐藏层开始。简单样本可能保留单层；需要指定双层、三层或四层时，在上方选择隐藏层数并应用。'
-        : '本次比较 ' + model.trials.length + ' 种结构，选用 ' + shape + '。' + (model.normalizedLoss <= TARGET_LOSS ? '误差已达标，不必继续加层；也可手动选择。' : '保留误差最低的结构，尚未达到拟合目标。')
+      ? !count ? '自动进化：每次训练都比较一至四隐藏层的七种结构，机器自己选择层数与节点。'
+        : '本次自动比较 ' + model.trials.length + ' 种结构，选用 ' + shape + '。' + (model.normalizedLoss <= TARGET_LOSS ? '已达到误差目标。' : '保留误差最低的结构，尚未达到拟合目标。')
       : '手动网络 ' + shape + '。所有层、所有输入输出都参与实际计算。';
     $('sample-empty').hidden = count > 0; $('sample-table-wrap').hidden = count === 0; $('sample-rows').replaceChildren();
     model.samples.forEach(([x, y], i) => {
@@ -137,7 +172,7 @@
     });
     $('prediction').textContent = prediction ? valueText(prediction.y) : '?';
     $('prediction-note').textContent = prediction ? '输入 ' + valueText(prediction.x) + ' 的近似输出' : count ? '准备好了，填写全部输入试试吧。' : '先训练，再见证它的第一次预测。';
-    renderNetwork($('network'), model, preview); renderCurve(); renderFunction(); renderMappings();
+    renderNetwork($('network'), model, preview); renderCurve(); renderFunction(); renderMappings(); renderDecision();
   }
   function toast(text) {
     clearTimeout(toastTimer); $('toast').textContent = text; $('toast').hidden = false;
@@ -164,7 +199,7 @@
     try {
       const existed = model.samples.some(s => JSON.stringify(s[0]) === JSON.stringify(x));
       model.train(x, y); prediction = null; preview = { x, y: model.predict(x) }; traceX = x; $('train-form').reset();
-      message('train-message', (existed ? '已更新 ' : '已学习 ') + valueText(x) + ' → ' + valueText(y) + '，执行 ' + model.lastRounds + ' 轮；当前 ' + model.architecture.length + ' 个隐藏层。', 'success');
+      message('train-message', (existed ? '已更新 ' : '已学习 ') + valueText(x) + ' → ' + valueText(y) + '。' + (model.structureMode === 'auto' ? actionNames[model.decision.action] + '，比较 ' + model.trials.length + ' 种结构；' : '固定结构训练；') + '当前 ' + model.architecture.length + ' 个隐藏层。', 'success');
       message('predict-message', '模型已更新，试着计算一组新输入吧。'); render();
       const panel = document.querySelector('.machine-panel'); clearTimeout(animationTimer); panel.classList.remove('learning'); void panel.offsetWidth;
       panel.classList.add('learning'); animationTimer = setTimeout(() => panel.classList.remove('learning'), 800); $('train-x').focus();
@@ -196,6 +231,13 @@
     }
     model.setStructure($('structure').value); structureChanged(); toast(model.samples.length ? '已更换真实结构，并重新训练已有样本。' : '网络结构已改变，每一层都参与实际计算。');
   });
+  function setAutomatic(automatic) {
+    model.setStructure(automatic ? 'auto' : model.architecture.join('-'));
+    structureChanged();
+    toast(automatic ? '已交还机器决定：今后每次训练都自动比较层数与节点。' : '已固定当前结构，关闭自动改变形状。');
+  }
+  $('auto-structure').addEventListener('change', () => setAutomatic($('auto-structure').checked));
+  $('resume-auto').addEventListener('click', () => setAutomatic(true));
   $('hidden-count').addEventListener('change', () => layerWidthFields($('hidden-count').value === 'auto' ? 0 : Number($('hidden-count').value)));
   for (const id of ['input-count', 'output-count']) $(id).addEventListener('change', () => {
     const changed = Number($('input-count').value) !== model.inputSize || Number($('output-count').value) !== model.outputSize;
@@ -205,7 +247,7 @@
     event.preventDefault();
     try {
       let structure = 'auto';
-      if ($('hidden-count').value !== 'auto') {
+      if (!$('auto-structure').checked && $('hidden-count').value !== 'auto') {
         const widths = Array.from($('layer-width-controls').querySelectorAll('input')).map(input => {
           const n = Number(input.value);
           if (!Number.isInteger(n) || n < 1 || n > 12 || !input.value.trim()) { input.setAttribute('aria-invalid', 'true'); throw new RangeError('每层需要 1～12 个节点。'); }

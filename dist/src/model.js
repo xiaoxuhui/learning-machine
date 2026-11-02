@@ -51,7 +51,8 @@
       this.inputSize = 1; this.outputSize = 1;
       this.samples = []; this.epochs = 0; this.loss = null; this.normalizedLoss = null;
       this.inputScales = [1]; this.outputScales = [1]; this.sx = 1; this.sy = 1;
-      this.structureMode = 'auto'; this.trials = []; this.lastRounds = 0; this.initialize();
+      this.structureMode = 'auto'; this.trials = []; this.lastRounds = 0;
+      this.decision = null; this.shapeHistory = []; this.initialize();
     }
     configure({ inputSize = this.inputSize, outputSize = this.outputSize, structure = this.structureMode } = {}) {
       validateSize(inputSize); validateSize(outputSize); const architecture = parseArchitecture(structure);
@@ -62,7 +63,7 @@
       }
       this.structureMode = structure;
       if (this.samples.length) this.fit();
-      else { this.initialize(architecture); this.trials = []; this.lastRounds = 0; }
+      else { this.initialize(architecture); this.trials = []; this.lastRounds = 0; this.decision = null; }
       return { dimensionsChanged };
     }
     weights() { return copy(this.layers); }
@@ -85,6 +86,7 @@
       return gradients;
     }
     fit() {
+      const previousArchitecture = [...this.architecture];
       const candidates = this.structureMode === 'auto' ? CANDIDATES : [parseArchitecture(this.structureMode)];
       const data = this.samples.map(([x, y]) => [asArray(x).map((v, i) => v / this.inputScales[i]), asArray(y).map((v, i) => v / this.outputScales[i])]);
       let best = null; this.trials = []; this.lastRounds = 0;
@@ -103,13 +105,34 @@
         }
         this.lastRounds += EPOCHS;
         const normalizedLoss = data.reduce((sum, [x, y]) => sum + asArray(this.forward(x)).reduce((s, v, i) => s + (v - y[i]) ** 2, 0) / this.outputSize, 0) / data.length;
-        this.trials.push({ architecture: [...architecture], normalizedLoss });
-        if (!best || normalizedLoss < best.normalizedLoss) best = { architecture: [...architecture], layers: this.weights(), normalizedLoss };
-        if (normalizedLoss <= TARGET_LOSS) break;
+        const parameterCount = this.layers.reduce((total, layer) => total + layer.biases.length + layer.weights.reduce((sum, row) => sum + row.length, 0), 0);
+        const targetMet = normalizedLoss <= TARGET_LOSS;
+        this.trials.push({ architecture: [...architecture], normalizedLoss, parameterCount, selected: false });
+        const better = !best || (targetMet && !best.targetMet) || (targetMet === best.targetMet && (
+          targetMet ? parameterCount < best.parameterCount || (parameterCount === best.parameterCount && normalizedLoss < best.normalizedLoss)
+            : normalizedLoss < best.normalizedLoss || (normalizedLoss === best.normalizedLoss && parameterCount < best.parameterCount)
+        ));
+        if (better) best = { architecture: [...architecture], layers: this.weights(), normalizedLoss, parameterCount, targetMet };
       }
       this.architecture = best.architecture; this.layers = best.layers; this.normalizedLoss = best.normalizedLoss;
       this.loss = this.samples.reduce((sum, [x, y]) => sum + asArray(this.predict(x)).reduce((s, v, i) => s + (v - asArray(y)[i]) ** 2, 0) / this.outputSize, 0) / this.samples.length;
       this.epochs += this.lastRounds;
+      this.trials.forEach(trial => { trial.selected = trial.architecture.join('-') === this.architecture.join('-'); });
+      let action = 'keep';
+      if (this.architecture.length > previousArchitecture.length) action = 'deepen';
+      else if (this.architecture.length < previousArchitecture.length) action = 'shallow';
+      else if (this.architecture.join('-') !== previousArchitecture.join('-')) {
+        const difference = this.architecture.reduce((sum, n) => sum + n, 0) - previousArchitecture.reduce((sum, n) => sum + n, 0);
+        action = difference > 0 ? 'widen' : difference < 0 ? 'narrow' : 'reshape';
+      }
+      this.decision = {
+        mode: this.structureMode === 'auto' ? 'auto' : 'fixed', from: previousArchitecture, to: [...this.architecture], action,
+        reason: this.structureMode !== 'auto' ? 'fixed-by-user' : best.targetMet ? 'simplest-meeting-target' : 'lowest-error',
+        normalizedLoss: best.normalizedLoss, parameterCount: best.parameterCount, targetMet: best.targetMet,
+        tested: this.trials.length, epochs: this.epochs
+      };
+      this.shapeHistory.push(copy(this.decision));
+      if (this.shapeHistory.length > 10) this.shapeHistory.shift();
     }
     train(rawX, rawY) {
       const x = parseVector(rawX, this.inputSize), y = parseVector(rawY, this.outputSize);
