@@ -10,7 +10,7 @@ test('initial state and reset restore all original parameters', () => {
 test('training changes real weights and records finite loss', () => {
   const m = new NeuralNetwork(), weights = m.weights(); m.train(1, 2);
   assert.notDeepEqual(m.weights(), weights); assert.equal(m.samples.length, 1);
-  assert.equal(m.epochs, 4200); assert.ok(Number.isFinite(m.loss)); assert.ok(m.loss < 0.001);
+  assert.equal(m.epochs, 600 * m.trials.length); assert.ok(Number.isFinite(m.loss)); assert.ok(m.loss < 0.001);
 });
 test('learns an unseen input for the double rule', () => {
   const m = new NeuralNetwork(); for (const pair of [[0, 0], [1, 2], [2, 4]]) m.train(...pair);
@@ -22,7 +22,7 @@ test('prediction does not mutate any model state', () => {
 });
 test('duplicate input updates the correct output', () => {
   const m = new NeuralNetwork(); m.train(1, 2); m.train(1, -3);
-  assert.deepEqual(m.samples, [[1, -3]]); assert.equal(m.epochs, 8400);
+  assert.deepEqual(m.samples, [[1, -3]]); assert.equal(m.epochs, 10800);
   assert.ok(Math.abs(m.predict(1) + 3) < 0.01);
 });
 test('empty, non-finite, invalid and out of range numbers are rejected', () => {
@@ -101,8 +101,8 @@ test('full nested expression and layer traces match actual inference for every s
 test('auto selection really changes width and may select nested layers based on observed error', () => {
   const m = new NeuralNetwork();
   for (const p of [[-2, 0], [-1, 1], [0, 0], [1, 1], [2, 0]]) m.train(...p);
-  assert.ok(m.architecture.length > 1); assert.equal(m.trials.length, 7);
-  assert.equal(m.lastRounds, 4200);
+  assert.ok(m.architecture.length > 1); assert.ok(m.trials.length > 7);
+  assert.equal(m.lastRounds, 600 * m.trials.length);
   const minimum = Math.min(...m.trials.map(t => t.normalizedLoss));
   assert.ok(Math.abs(m.loss / m.sy ** 2 - minimum) < 1e-12);
 });
@@ -116,7 +116,7 @@ test('structure choice retrains existing samples and never fabricates extra exam
   m.setStructure('4-3'); assert.equal(JSON.stringify(m.samples), samples);
   assert.equal(m.epochs, epochs + 600); assert.deepEqual(m.architecture, [4, 3]);
   assert.ok(Math.abs(m.predict(1) - 2) < 0.02);
-  const before = JSON.stringify(m); assert.throws(() => m.setStructure('999'), RangeError); assert.equal(JSON.stringify(m), before);
+  const before = JSON.stringify(m); assert.throws(() => m.setStructure('0'), RangeError); assert.equal(JSON.stringify(m), before);
 });
 
 test('four custom hidden layers and multiple endpoints have correct real matrix shapes', () => {
@@ -181,17 +181,17 @@ test('dimension changes clear incompatible data; same dimensions preserve sample
 });
 test('configuration errors never change an existing trained model', () => {
   const m = new NeuralNetwork(); m.train(1, 2); const before = JSON.stringify(m);
-  for (const options of [{ inputSize: 0 }, { outputSize: 5 }, { inputSize: 1.5 }, { structure: '2-2-2-2-2' }, { structure: '0' }, { structure: '13' }]) {
+  for (const options of [{ inputSize: 0 }, { outputSize: -1 }, { inputSize: 1.5 }, { inputSize: Number.MAX_SAFE_INTEGER }, { structure: '0' }, { structure: '2--3' }, { structure: '100000000' }]) {
     assert.throws(() => m.configure(options), RangeError); assert.equal(JSON.stringify(m), before);
   }
 });
 
 test('automatic training evaluates every width and depth even when the first candidate fits', () => {
   const m = new NeuralNetwork(); m.train(1, 2);
-  assert.deepEqual(m.trials.map(t => t.architecture), [[2], [4], [6], [4, 3], [6, 4], [8, 6, 4], [8, 6, 4, 2]]);
+  assert.deepEqual(m.trials.map(t => t.architecture), [[2], [4], [6], [4, 3], [6, 4], [8, 6, 4], [8, 6, 4, 2], [3], [2, 2]]);
   assert.ok(m.trials.every(t => Number.isFinite(t.normalizedLoss) && t.parameterCount > 0));
   assert.equal(m.trials.filter(t => t.selected).length, 1);
-  assert.equal(m.decision.tested, 7); assert.equal(m.decision.reason, 'simplest-meeting-target');
+  assert.equal(m.decision.tested, 9); assert.equal(m.decision.reason, 'simplest-meeting-target');
   const eligible = m.trials.filter(t => t.normalizedLoss <= 0.0001);
   assert.equal(m.decision.parameterCount, Math.min(...eligible.map(t => t.parameterCount)));
 });
@@ -208,7 +208,7 @@ test('explicitly fixed structure can return to autonomous decisions without losi
   const m = new NeuralNetwork(); m.setStructure('4-3'); m.train(1, 2);
   assert.equal(m.trials.length, 1); assert.equal(m.decision.reason, 'fixed-by-user');
   const samples = JSON.stringify(m.samples); m.setStructure('auto');
-  assert.equal(JSON.stringify(m.samples), samples); assert.equal(m.decision.mode, 'auto'); assert.equal(m.trials.length, 7);
+  assert.equal(JSON.stringify(m.samples), samples); assert.equal(m.decision.mode, 'auto'); assert.ok(m.trials.length > 7);
   assert.deepEqual(m.architecture, [2]);
   const before = JSON.stringify(m); m.predict(0.5); m.forwardTrace(0.2); m.functionExpression(); assert.equal(JSON.stringify(m), before);
 });
@@ -216,4 +216,34 @@ test('decision history is bounded and reset clears every decision', () => {
   const m = new NeuralNetwork(); for (let i = 0; i < 12; i++) m.train(0, i);
   assert.equal(m.shapeHistory.length, 10); assert.deepEqual(m.shapeHistory.at(-1), m.decision);
   m.reset(); assert.equal(m.decision, null); assert.deepEqual(m.shapeHistory, []); assert.deepEqual(m.trials, []);
+});
+
+test('more than four input/output dimensions train, predict and generate correct complete functions', () => {
+  const m = new NeuralNetwork({ inputSize: 8, outputSize: 5 });
+  const x = [0, 1, -1, 2, -2, 0.5, -0.5, 3], y = [1, -1, 2, -2, 0];
+  m.train(x, y); assert.equal(m.predict(x).length, 5);
+  const args = x.map((_, i) => 'x' + (i + 1));
+  for (let i = 0; i < 5; i++) {
+    const f = new Function(...args, 'tanh', `return ${m.functionExpression(i)};`);
+    assert.ok(Math.abs(f(...x, Math.tanh) - m.predict(x)[i]) < 1e-10);
+  }
+  const before = JSON.stringify(m); m.predict(Array(8).fill(0)); assert.equal(JSON.stringify(m), before);
+  assert.equal(m.inputSize, 8); assert.equal(m.outputSize, 5);
+});
+test('automatic neighborhoods extend beyond original four-layer and twelve-node presets without changing endpoints', () => {
+  const m = new NeuralNetwork({ inputSize: 6, outputSize: 7 }); m.setStructure('13-3-3-3-3');
+  const candidates = m.candidateArchitectures().map(a => a.join('-'));
+  assert.ok(candidates.includes('14-3-3-3-3')); assert.ok(candidates.includes('13-3-3-3-3-3'));
+  assert.ok(candidates.includes('12-3-3-3-3')); assert.ok(candidates.includes('13-3-3-3'));
+  m.setStructure('auto'); m.train(Array(6).fill(0), Array(7).fill(0));
+  assert.equal(m.inputSize, 6); assert.equal(m.outputSize, 7);
+});
+test('whole-network resource budget rejects an unaffordable configuration before deleting trained data', () => {
+  const m = new NeuralNetwork(); m.train(1, 2); const before = JSON.stringify(m);
+  assert.throws(() => m.configure({ inputSize: 1000000, outputSize: 1000000 }), /计算预算/);
+  assert.equal(JSON.stringify(m), before);
+});
+test('training budget failure cannot add a partial sample or alter parameters', () => {
+  const m = new NeuralNetwork(); m.setStructure('5000'); m.samples = [[0, 0], [1, 1], [2, 2]];
+  const before = JSON.stringify(m); assert.throws(() => m.train(3, 3), /计算预算/); assert.equal(JSON.stringify(m), before);
 });
