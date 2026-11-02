@@ -9,17 +9,24 @@
   const svgText = (x, y, text, attrs = '') => '<text x="' + x + '" y="' + y + '" ' + attrs + '>' + text + '</text>';
   function renderNetwork(container, model, preview) {
     const sizes = [model.inputSize, ...model.architecture, model.outputSize];
+    const visibleCounts = sizes.map(size => size > 24 ? 16 : size);
+    const diagramHeight = Math.max(294, Math.max(...visibleCounts) * 24 + 60), diagramWidth = Math.max(620, (sizes.length - 1) * 110 + 90);
     const rawInput = preview ? asArray(preview.x) : Array(model.inputSize).fill(0);
     const trace = model.traceNormalized(rawInput.map((v, i) => v / model.inputScales[i]));
-    const nodes = sizes.map((size, l) => Array.from({ length: size }, (_, i) => ({
-      x: 45 + l * 530 / (sizes.length - 1),
-      y: size === 1 ? 140 : 34 + i * 210 / (size - 1),
-      r: size === 1 && (l === 0 || l === sizes.length - 1) ? 25 : size > 8 ? 7.5 : size > 6 ? 11 : 15
-    })));
+    const nodes = sizes.map((size, l) => {
+      const indices = size > 24 ? [...Array.from({ length: 8 }, (_, i) => i), ...Array.from({ length: 8 }, (_, i) => size - 8 + i)] : Array.from({ length: size }, (_, i) => i);
+      return new Map(indices.map((i, slot) => [i, {
+        x: 45 + l * (diagramWidth - 90) / (sizes.length - 1),
+        y: size === 1 ? (diagramHeight - 14) / 2 : 34 + slot * (diagramHeight - 84) / (indices.length - 1),
+        r: size === 1 && (l === 0 || l === sizes.length - 1) ? 25 : indices.length > 8 ? 7.5 : indices.length > 6 ? 11 : 15
+      }]));
+    });
     let content = '<title>实际多层神经网络 ' + sizes.join(' → ') + '</title><desc>每列为真实的一层，绿色为正权重、橙色为负权重；所有输入输出均参与实际计算。</desc>';
     model.layers.forEach((layer, l) => {
       layer.weights.forEach((row, i) => row.forEach((weight, j) => {
-        const a = nodes[l][j], b = nodes[l + 1][i], dx = (b.x - a.x) * 0.4;
+        const a = nodes[l].get(j), b = nodes[l + 1].get(i);
+        if (!a || !b) return;
+        const dx = (b.x - a.x) * 0.4;
         const size = Math.min(3.6, 0.5 + Math.abs(weight) * 1.9), opacity = Math.min(0.75, 0.15 + Math.abs(weight) * 0.45);
         content += '<path d="M ' + (a.x + a.r) + ' ' + a.y + ' C ' + (a.x + dx) + ' ' + a.y + ',' + (b.x - dx) + ' ' + b.y + ',' + (b.x - b.r) + ' ' + b.y + '" fill="none" stroke="' + (weight >= 0 ? '#a1c786' : '#c3a075') + '" stroke-width="' + size + '" opacity="' + opacity + '" data-weight="' + weight + '"><title>层 ' + l + ' 节点 ' + (j + 1) + ' → 层 ' + (l + 1) + ' 节点 ' + (i + 1) + '，权重 ' + format(weight) + '</title></path>';
       }));
@@ -34,10 +41,13 @@
         content += '<g data-layer="' + l + '" data-node="' + i + '"><circle cx="' + node.x + '" cy="' + node.y + '" r="' + node.r + '" fill="' + (endpoint ? '#2e4530' : '#263c2c') + '" stroke="#a4c583" stroke-opacity="' + (endpoint ? 1 : 0.7) + '"/><title>' + name + ' = ' + format(activation) + '</title>';
         content += svgText(node.x, node.y + (node.r > 20 ? 5 : 3), value, 'text-anchor="middle" fill="#d3e7b6" font-size="' + fontSize + '" font-family="Consolas,monospace"') + '</g>';
       });
-      const label = l === 0 ? '输入 · ' + model.inputSize : l === sizes.length - 1 ? '输出 · ' + model.outputSize : '隐藏层 ' + l + ' · ' + sizes[l];
-      content += svgText(layer[0].x, 278, label, 'text-anchor="middle" fill="#a1b48d" font-size="10"');
+      const label = (l === 0 ? '输入 · ' + model.inputSize : l === sizes.length - 1 ? '输出 · ' + model.outputSize : '隐藏层 ' + l + ' · ' + sizes[l]) + (sizes[l] > 24 ? '（已折叠）' : '');
+      content += svgText(layer.values().next().value.x, diagramHeight - 16, label, 'text-anchor="middle" fill="#a1b48d" font-size="10"');
     });
-    container.innerHTML = '<svg viewBox="0 0 620 294" role="img" aria-label="实际网络结构 ' + sizes.join(' → ') + '">' + content + '</svg>';
+    const scrolling = diagramHeight > 294 || diagramWidth > 620;
+    container.classList.toggle('scroll-diagram', scrolling);
+    container.innerHTML = '<svg viewBox="0 0 ' + diagramWidth + ' ' + diagramHeight + '" ' + (scrolling ? 'style="min-width:' + diagramWidth + 'px" ' : '') + 'data-total-node-count="' + sizes.reduce((sum, size) => sum + size, 0) + '" role="img" aria-label="实际网络结构 ' + sizes.join(' → ') + '">' + content + '</svg>'
+      + (sizes.some(size => size > 24) ? '<p class="network-summary">大图已折叠：超过 24 个节点的层仅显示首尾各 8 个；标注数量及实际计算包含全部节点。</p>' : '');
   }
   function renderChart(container, model, prediction, options = {}) {
     const inputIndex = options.inputIndex || 0, outputIndex = options.outputIndex || 0;

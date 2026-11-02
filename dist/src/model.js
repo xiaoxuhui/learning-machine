@@ -7,6 +7,7 @@
   'use strict';
   const LIMIT = 1000, EPOCHS = 600, RATE = 0.08, MAX_SAMPLES = 32, TARGET_LOSS = 0.0001;
   const CANDIDATES = [[2], [4], [6], [4, 3], [6, 4], [8, 6, 4], [8, 6, 4, 2]];
+  const MAX_PARAMETERS = 20000, MAX_TRAINING_WORK = 30000000;
   const copy = value => JSON.parse(JSON.stringify(value));
   const asArray = value => Array.isArray(value) ? value : [value];
   const unpack = values => values.length === 1 ? values[0] : values;
@@ -24,13 +25,25 @@
   }
   function parseArchitecture(mode) {
     if (mode === 'auto') return [2];
-    if (typeof mode !== 'string' || !/^\d+(?:-\d+){0,3}$/.test(mode)) throw new RangeError('隐藏层需要 1～4 层，每层 1～12 个节点。');
+    if (typeof mode !== 'string' || !/^\d+(?:-\d+)*$/.test(mode)) throw new RangeError('每层节点数需要是正整数。');
     const widths = mode.split('-').map(Number);
-    if (widths.some(n => n < 1 || n > 12)) throw new RangeError('隐藏层需要 1～4 层，每层 1～12 个节点。');
+    if (widths.some(n => !Number.isSafeInteger(n) || n < 1)) throw new RangeError('每层节点数需要是正整数。');
     return widths;
   }
   function validateSize(n) {
-    if (!Number.isInteger(n) || n < 1 || n > 4) throw new RangeError('输入和输出数量需要是 1～4 的整数。');
+    if (!Number.isSafeInteger(n) || n < 1) throw new RangeError('输入和输出数量需要是正整数。');
+  }
+  function parameterCountFor(inputSize, architecture, outputSize) {
+    let previous = inputSize, total = 0;
+    for (const width of [...architecture, outputSize]) { total += (previous + 1) * width; previous = width; }
+    return Number.isSafeInteger(total) ? total : Infinity;
+  }
+  function affordable(inputSize, architecture, outputSize, sampleCount = 1) {
+    const count = parameterCountFor(inputSize, architecture, outputSize);
+    return count <= MAX_PARAMETERS && count * EPOCHS * Math.max(1, sampleCount) <= MAX_TRAINING_WORK;
+  }
+  function requireBudget(inputSize, architecture, outputSize, sampleCount = 1) {
+    if (!affordable(inputSize, architecture, outputSize, sampleCount)) throw new RangeError('网络超出本机计算预算，请减少输入输出数量或隐藏节点；当前样本已保留。');
   }
   class NeuralNetwork {
     constructor(options = {}) {
@@ -55,8 +68,11 @@
       this.decision = null; this.shapeHistory = []; this.initialize();
     }
     configure({ inputSize = this.inputSize, outputSize = this.outputSize, structure = this.structureMode } = {}) {
-      validateSize(inputSize); validateSize(outputSize); const architecture = parseArchitecture(structure);
+      validateSize(inputSize); validateSize(outputSize); let architecture = parseArchitecture(structure);
       const dimensionsChanged = inputSize !== this.inputSize || outputSize !== this.outputSize;
+      const sampleCount = dimensionsChanged ? 1 : Math.max(1, this.samples.length);
+      if (structure === 'auto') architecture = this.candidateArchitectures({ inputSize, outputSize, architecture, sampleCount })[0];
+      else requireBudget(inputSize, architecture, outputSize, sampleCount);
       if (dimensionsChanged) {
         this.reset(); this.inputSize = inputSize; this.outputSize = outputSize;
         this.inputScales = Array(inputSize).fill(1); this.outputScales = Array(outputSize).fill(1);
@@ -67,6 +83,18 @@
       return { dimensionsChanged };
     }
     weights() { return copy(this.layers); }
+    candidateArchitectures({ inputSize = this.inputSize, outputSize = this.outputSize, architecture = this.architecture, sampleCount = this.samples.length } = {}) {
+      const grow = [...architecture], shrink = [...architecture];
+      const widest = architecture.indexOf(Math.max(...architecture));
+      grow[widest] += 1; shrink[widest] = Math.max(2, shrink[widest] - 1);
+      const raw = [...CANDIDATES, architecture, grow, shrink, [...architecture, Math.min(4, architecture.at(-1))]];
+      if (architecture.length > 1) raw.push(architecture.slice(0, -1));
+      const unique = [...new Map(raw.map(a => [a.join('-'), a])).values()];
+      const candidates = unique.filter(a => affordable(inputSize, a, outputSize, sampleCount));
+      if (!candidates.length && affordable(inputSize, [1], outputSize, sampleCount)) candidates.push([1]);
+      if (!candidates.length) requireBudget(inputSize, [1], outputSize, sampleCount);
+      return candidates;
+    }
     traceNormalized(value) {
       let inputs = asArray(value);
       return this.layers.map((layer, index) => {
@@ -87,7 +115,7 @@
     }
     fit() {
       const previousArchitecture = [...this.architecture];
-      const candidates = this.structureMode === 'auto' ? CANDIDATES : [parseArchitecture(this.structureMode)];
+      const candidates = this.structureMode === 'auto' ? this.candidateArchitectures() : [parseArchitecture(this.structureMode)];
       const data = this.samples.map(([x, y]) => [asArray(x).map((v, i) => v / this.inputScales[i]), asArray(y).map((v, i) => v / this.outputScales[i])]);
       let best = null; this.trials = []; this.lastRounds = 0;
       for (const architecture of candidates) {
@@ -139,6 +167,9 @@
       if (!x || !y) throw new RangeError('请填写所有输入和输出，每个数在 -1000 到 1000 之间。');
       const index = this.samples.findIndex(s => asArray(s[0]).every((v, i) => v === x[i]));
       if (index < 0 && this.samples.length >= MAX_SAMPLES) throw new RangeError('最多学习 32 个不同输入；可以修改已有输入的正确输出。');
+      const nextCount = this.samples.length + (index < 0 ? 1 : 0);
+      if (this.structureMode === 'auto') this.candidateArchitectures({ sampleCount: nextCount });
+      else requireBudget(this.inputSize, this.architecture, this.outputSize, nextCount);
       if (index < 0) this.samples.push([unpack(x), unpack(y)]); else this.samples[index] = [unpack(x), unpack(y)];
       this.inputScales = x.map((_, i) => Math.max(1, ...this.samples.map(s => Math.abs(asArray(s[0])[i]))));
       this.outputScales = y.map((_, i) => Math.max(1, ...this.samples.map(s => Math.abs(asArray(s[1])[i]))));
@@ -212,5 +243,5 @@
       return equations;
     }
   }
-  return { NeuralNetwork, parseNumber, parseVector, parseArchitecture, asArray, unpack, LIMIT, HIDDEN: 2, EPOCHS, MAX_SAMPLES, TARGET_LOSS, CANDIDATES };
+  return { NeuralNetwork, parseNumber, parseVector, parseArchitecture, parameterCountFor, asArray, unpack, LIMIT, HIDDEN: 2, EPOCHS, MAX_SAMPLES, TARGET_LOSS, CANDIDATES, MAX_PARAMETERS, MAX_TRAINING_WORK };
 });

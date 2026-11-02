@@ -15,6 +15,7 @@
   }
   function makeFields(containerId, prefix, size, title, letter, hint, messageId) {
     const container = $(containerId); container.replaceChildren();
+    container.classList.toggle('many-fields', size > 8);
     for (let i = 0; i < size; i++) {
       const box = document.createElement('div'), label = document.createElement('label'), input = document.createElement('input');
       input.id = fieldId(prefix, i); input.name = letter + (i + 1); input.inputMode = 'decimal'; input.autocomplete = 'off';
@@ -60,7 +61,7 @@
     const widths = $('layer-width-controls'); widths.replaceChildren(); widths.hidden = count === 0;
     for (let i = 0; i < count; i++) {
       const label = document.createElement('label'), input = document.createElement('input');
-      label.textContent = '第 ' + (i + 1) + ' 层节点'; input.id = 'layer-width-' + i; input.type = 'number'; input.min = '1'; input.max = '12'; input.step = '1';
+      label.textContent = '第 ' + (i + 1) + ' 层节点'; input.id = 'layer-width-' + i; input.type = 'number'; input.min = '1'; input.step = '1';
       input.value = defaults[i] || [4, 4, 3, 2][i]; input.setAttribute('aria-label', '第 ' + (i + 1) + ' 隐藏层节点数'); label.appendChild(input); widths.appendChild(label);
     }
   }
@@ -71,6 +72,9 @@
     $('resume-auto').hidden = automatic;
     $('network-config').classList.toggle('automatic', automatic);
     $('input-count').value = model.inputSize; $('output-count').value = model.outputSize;
+    if (!Array.from($('hidden-count').options).some(o => o.value === String(model.architecture.length))) {
+      const option = document.createElement('option'); option.value = model.architecture.length; option.textContent = model.architecture.length + ' 层'; $('hidden-count').appendChild(option);
+    }
     $('hidden-count').value = model.structureMode === 'auto' ? 'auto' : model.architecture.length;
     layerWidthFields(model.structureMode === 'auto' ? 0 : model.architecture.length);
     $('structure').value = Array.from($('structure').options).some(o => o.value === model.structureMode) ? model.structureMode : 'custom';
@@ -159,7 +163,7 @@
     $('architecture-label').textContent = shape;
     $('architecture-caption').textContent = model.inputSize + ' 输入 · ' + model.architecture.length + ' 隐藏层 · ' + model.outputSize + ' 输出';
     $('structure-info').textContent = model.structureMode === 'auto'
-      ? !count ? '自动进化：每次训练都比较一至四隐藏层的七种结构，机器自己选择层数与节点。'
+      ? !count ? '任务维度由你手填并固定。机器会比较基础结构，并从当前网络继续增减隐藏层和节点。'
         : '本次自动比较 ' + model.trials.length + ' 种结构，选用 ' + shape + '。' + (model.normalizedLoss <= TARGET_LOSS ? '已达到误差目标。' : '保留误差最低的结构，尚未达到拟合目标。')
       : '手动网络 ' + shape + '。所有层、所有输入输出都参与实际计算。';
     $('sample-empty').hidden = count > 0; $('sample-table-wrap').hidden = count === 0; $('sample-rows').replaceChildren();
@@ -239,23 +243,30 @@
   $('auto-structure').addEventListener('change', () => setAutomatic($('auto-structure').checked));
   $('resume-auto').addEventListener('click', () => setAutomatic(true));
   $('hidden-count').addEventListener('change', () => layerWidthFields($('hidden-count').value === 'auto' ? 0 : Number($('hidden-count').value)));
-  for (const id of ['input-count', 'output-count']) $(id).addEventListener('change', () => {
+  for (const id of ['input-count', 'output-count']) $(id).addEventListener('input', () => {
     const changed = Number($('input-count').value) !== model.inputSize || Number($('output-count').value) !== model.outputSize;
     message('config-message', changed ? '应用新输入/输出数量将清空当前样本、训练轮次和预测。' : '输入输出数量不变时，保留样本并重新训练。');
   });
   $('network-config').addEventListener('submit', event => {
     event.preventDefault();
     try {
+      const counts = ['input-count', 'output-count'].map(id => {
+        const field = $(id), text = field.value.trim(), value = Number(text);
+        if (!/^\d+$/.test(text) || !Number.isSafeInteger(value) || value < 1) {
+          field.setAttribute('aria-invalid', 'true'); field.focus(); throw new RangeError('输入和输出数量请手动填写正整数。');
+        }
+        field.removeAttribute('aria-invalid'); return value;
+      });
       let structure = 'auto';
       if (!$('auto-structure').checked && $('hidden-count').value !== 'auto') {
         const widths = Array.from($('layer-width-controls').querySelectorAll('input')).map(input => {
           const n = Number(input.value);
-          if (!Number.isInteger(n) || n < 1 || n > 12 || !input.value.trim()) { input.setAttribute('aria-invalid', 'true'); throw new RangeError('每层需要 1～12 个节点。'); }
+          if (!Number.isSafeInteger(n) || n < 1 || !input.value.trim()) { input.setAttribute('aria-invalid', 'true'); throw new RangeError('每层节点数需要是正整数。'); }
           return n;
         });
         structure = widths.join('-');
       }
-      const result = model.configure({ inputSize: Number($('input-count').value), outputSize: Number($('output-count').value), structure });
+      const result = model.configure({ inputSize: counts[0], outputSize: counts[1], structure });
       if (result.dimensionsChanged) traceX = unpack(Array(model.inputSize).fill(0));
       structureChanged();
       if (result.dimensionsChanged) { $('train-form').reset(); $('predict-form').reset(); message('train-message', '已应用新输入输出数量，请教给它第一组样本。'); }
