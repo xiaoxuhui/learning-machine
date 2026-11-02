@@ -10,7 +10,7 @@ test('initial state and reset restore all original parameters', () => {
 test('training changes real weights and records finite loss', () => {
   const m = new NeuralNetwork(), weights = m.weights(); m.train(1, 2);
   assert.notDeepEqual(m.weights(), weights); assert.equal(m.samples.length, 1);
-  assert.equal(m.epochs, 600); assert.ok(Number.isFinite(m.loss)); assert.ok(m.loss < 0.001);
+  assert.equal(m.epochs, 4200); assert.ok(Number.isFinite(m.loss)); assert.ok(m.loss < 0.001);
 });
 test('learns an unseen input for the double rule', () => {
   const m = new NeuralNetwork(); for (const pair of [[0, 0], [1, 2], [2, 4]]) m.train(...pair);
@@ -22,7 +22,7 @@ test('prediction does not mutate any model state', () => {
 });
 test('duplicate input updates the correct output', () => {
   const m = new NeuralNetwork(); m.train(1, 2); m.train(1, -3);
-  assert.deepEqual(m.samples, [[1, -3]]); assert.equal(m.epochs, 1200);
+  assert.deepEqual(m.samples, [[1, -3]]); assert.equal(m.epochs, 8400);
   assert.ok(Math.abs(m.predict(1) + 3) < 0.01);
 });
 test('empty, non-finite, invalid and out of range numbers are rejected', () => {
@@ -184,4 +184,36 @@ test('configuration errors never change an existing trained model', () => {
   for (const options of [{ inputSize: 0 }, { outputSize: 5 }, { inputSize: 1.5 }, { structure: '2-2-2-2-2' }, { structure: '0' }, { structure: '13' }]) {
     assert.throws(() => m.configure(options), RangeError); assert.equal(JSON.stringify(m), before);
   }
+});
+
+test('automatic training evaluates every width and depth even when the first candidate fits', () => {
+  const m = new NeuralNetwork(); m.train(1, 2);
+  assert.deepEqual(m.trials.map(t => t.architecture), [[2], [4], [6], [4, 3], [6, 4], [8, 6, 4], [8, 6, 4, 2]]);
+  assert.ok(m.trials.every(t => Number.isFinite(t.normalizedLoss) && t.parameterCount > 0));
+  assert.equal(m.trials.filter(t => t.selected).length, 1);
+  assert.equal(m.decision.tested, 7); assert.equal(m.decision.reason, 'simplest-meeting-target');
+  const eligible = m.trials.filter(t => t.normalizedLoss <= 0.0001);
+  assert.equal(m.decision.parameterCount, Math.min(...eligible.map(t => t.parameterCount)));
+});
+test('without choosing any structure, examples cause automatic deepening and simpler corrected examples cause shallowing', () => {
+  const m = new NeuralNetwork();
+  for (const pair of [[-2, 0], [-1, 1], [0, 0], [1, 1], [2, 0]]) m.train(...pair);
+  assert.equal(m.structureMode, 'auto'); assert.ok(m.architecture.length > 1);
+  assert.ok(m.shapeHistory.some(d => d.action === 'deepen' && d.mode === 'auto'));
+  for (const x of [-2, -1, 0, 1, 2]) m.train(x, 0);
+  assert.deepEqual(m.architecture, [2]); assert.ok(m.shapeHistory.some(d => d.action === 'shallow'));
+  assert.equal(m.samples.length, 5);
+});
+test('explicitly fixed structure can return to autonomous decisions without losing samples', () => {
+  const m = new NeuralNetwork(); m.setStructure('4-3'); m.train(1, 2);
+  assert.equal(m.trials.length, 1); assert.equal(m.decision.reason, 'fixed-by-user');
+  const samples = JSON.stringify(m.samples); m.setStructure('auto');
+  assert.equal(JSON.stringify(m.samples), samples); assert.equal(m.decision.mode, 'auto'); assert.equal(m.trials.length, 7);
+  assert.deepEqual(m.architecture, [2]);
+  const before = JSON.stringify(m); m.predict(0.5); m.forwardTrace(0.2); m.functionExpression(); assert.equal(JSON.stringify(m), before);
+});
+test('decision history is bounded and reset clears every decision', () => {
+  const m = new NeuralNetwork(); for (let i = 0; i < 12; i++) m.train(0, i);
+  assert.equal(m.shapeHistory.length, 10); assert.deepEqual(m.shapeHistory.at(-1), m.decision);
+  m.reset(); assert.equal(m.decision, null); assert.deepEqual(m.shapeHistory, []); assert.deepEqual(m.trials, []);
 });
