@@ -33,7 +33,7 @@ try {
   page.on('console', msg => { if (msg.type() === 'error') report.errors.push(msg.text()); });
   await page.goto(origin);
   const weights = () => page.locator('#network path[data-weight]').evaluateAll(elements => elements.map(e => Number(e.getAttribute('data-weight'))));
-  const state = async () => ({ weights: await weights(), epochs: await page.locator('#epoch-count').innerText(), samples: await page.locator('#sample-rows').innerText(), formula: await page.locator('#function-short').innerText() });
+  const state = async () => ({ weights: await weights(), epochs: await page.locator('#epoch-count').innerText(), samples: await page.locator('#sample-rows').innerText(), formula: await page.locator('#function-short').innerText(), decision: await page.locator('#decision-action').innerText(), trials: await page.locator('#structure-trials').textContent(), history: await page.locator('#shape-history').textContent() });
   const train = async (x, y, keyboard = false) => {
     await page.locator('#train-mode').click();
     await page.locator('#train-x').fill(String(x)); await page.locator('#train-y').fill(String(y));
@@ -75,7 +75,7 @@ try {
   const beforeTrace = await state();
   await page.locator('#trace-x').fill('-.75'); await page.locator('#trace-x').press('Enter');
   assert.match(await page.locator('#trace-message').innerText(), /-0.75/); assert.deepEqual(await state(), beforeTrace); check('Independent layer probing does not train or change parameters');
-  await page.locator('#structure').selectOption('8-6-4');
+  await page.locator('#auto-structure').uncheck(); await page.locator('#structure').selectOption('8-6-4');
   assert.equal(await page.locator('#network [data-node]').count(), 20); assert.equal(await page.locator('#network path[data-weight]').count(), 84);
   assert.equal(await page.locator('#layer-mappings .layer-block').count(), 6);
   assert.equal(await page.locator('#prediction').innerText(), '?'); assert.match(await page.locator('#function-full').innerText(), /tanh/);
@@ -100,7 +100,7 @@ try {
   assert.equal(await mobile.locator('#sample-count').innerText(), '1');
   await mobile.locator('#predict-mode').tap(); await mobile.locator('#predict-x').fill('2'); await mobile.locator('#predict-form button').tap();
   assert.ok(Math.abs(Number(await mobile.locator('#prediction').innerText()) - 4) < 0.05); check('390px real touch training/calculation with all three actions on one row');
-  await mobile.locator('#structure').selectOption('8-6-4'); assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  await mobile.locator('#auto-structure').uncheck(); await mobile.locator('#structure').selectOption('8-6-4'); assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   await mobile.screenshot({ path: path.join(root, 'evidence/mobile.png'), fullPage: true }); check('Mobile multilayer formulas and mapping layout have no horizontal page overflow');
   await mobile.locator('#reset').tap(); assert.equal(await mobile.locator('#sample-count').innerText(), '0'); check('Mobile touch reset restores initial model');
   await mobile.setViewportSize({ width: 320, height: 740 }); assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); await sameRow(mobile); check('320px narrow viewport keeps all actions on one row without overflow');
@@ -110,6 +110,7 @@ try {
   assert.equal(await offline.locator('#sample-count').innerText(), '1'); check('Built game works directly over file:// without a server');
 
   await page.locator('#reset').click();
+  await page.locator('#auto-structure').uncheck();
   await page.locator('#input-count').selectOption('2'); await page.locator('#output-count').selectOption('2');
   await page.locator('#hidden-count').selectOption('4');
   for (const [i, width] of [3, 4, 3, 2].entries()) await page.locator(`#layer-width-${i}`).fill(String(width));
@@ -169,6 +170,7 @@ try {
   assert.equal(await page.locator('#hidden-count').inputValue(), 'auto'); assert.equal(await page.locator('#train-inputs input').count(), 1); assert.equal(await page.locator('#train-outputs input').count(), 1);
   check('Complete reset restores scalar dimensions, auto depth and every dynamic form');
   await mobile.setViewportSize({ width: 390, height: 844 });
+  await mobile.locator('#auto-structure').uncheck();
   await mobile.locator('#input-count').selectOption('4'); await mobile.locator('#output-count').selectOption('4'); await mobile.locator('#hidden-count').selectOption('4');
   for (const [i, width] of [4, 4, 3, 2].entries()) await mobile.locator(`#layer-width-${i}`).fill(String(width));
   await mobile.locator('#network-config button').tap(); await vectorTrain(mobile, [1, 2, 3, 4], [4, 3, 2, 1]);
@@ -179,12 +181,47 @@ try {
   await mobile.screenshot({ path: path.join(root, 'evidence/mobile-vector.png'), fullPage: true });
   await mobile.setViewportSize({ width: 320, height: 740 }); assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   check('Real mobile touch supports four inputs, four outputs and four layers at 390px and 320px without page overflow');
+  await page.locator('#auto-structure').uncheck();
   await page.locator('#input-count').selectOption('2'); await page.locator('#output-count').selectOption('2'); await page.locator('#hidden-count').selectOption('4');
   for (const [i, width] of [3, 4, 3, 2].entries()) await page.locator(`#layer-width-${i}`).fill(String(width));
   await page.locator('#network-config button').click(); await vectorTrain(page, [1, 2], [3, -1]);
   if (await page.locator('#full-function').evaluate(e => e.open)) await page.locator('#full-function summary').click();
   await page.locator('#network-config').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(root, 'evidence/desktop-vector.png'), fullPage: true });
   check('Desktop screenshot records two inputs, two outputs, four real hidden layers and two functions');
+
+  await page.locator('#reset').click();
+  assert.equal(await page.locator('#auto-structure').isChecked(), true);
+  assert.equal(await page.locator('#structure').isVisible(), false); assert.equal(await page.locator('#hidden-count').isVisible(), false);
+  assert.equal(await page.locator('#shape-history').isVisible(), false); check('Automatic structure is the default and manual layer/node controls are hidden');
+  for (const pair of [[-2, 0], [-1, 1], [0, 0], [1, 1], [2, 0]]) await train(...pair);
+  const autonomousShape = await page.locator('#architecture-label').innerText();
+  assert.ok(autonomousShape.split(' → ').length > 3); assert.ok(await page.locator('#shape-history [data-action="deepen"]').count() > 0);
+  assert.equal(await page.locator('#auto-structure').isChecked(), true); check('Training examples alone automatically deepen the real model without touching any layer chooser');
+  assert.equal(await page.locator('#structure-trials tr').count(), 7); assert.equal(await page.locator('#structure-trials tr[data-selected="true"]').count(), 1);
+  await page.locator('#structure-comparison summary').click(); await playwright.expect(page.locator('#structure-trials')).toBeVisible();
+  assert.match(await page.locator('#decision-reason').innerText(), /实际比较了 7 种结构/);
+  await page.locator('#toast').waitFor({ state: 'hidden' });
+  await page.locator('.machine-panel').screenshot({ path: path.join(root, 'evidence/automatic-depth.png') });
+  check('Machine decision exposes all seven measured candidates, selected structure and reason');
+  for (const x of [-2, -1, 0, 1, 2]) await train(x, 0);
+  assert.equal(await page.locator('#architecture-label').innerText(), '1 → 2 → 1');
+  assert.ok(await page.locator('#shape-history [data-action="shallow"]').count() > 0);
+  assert.equal(await page.locator('#sample-count').innerText(), '5'); check('Corrected simpler examples automatically reduce depth while retaining all samples');
+  const sampleText = await page.locator('#sample-rows').innerText();
+  await page.locator('#auto-structure').uncheck(); assert.equal(await page.locator('#structure').isVisible(), true);
+  await page.locator('#structure').selectOption('8-6-4-2'); assert.match(await page.locator('#decision-action').innerText(), /手动/);
+  await page.locator('#resume-auto').click(); assert.equal(await page.locator('#auto-structure').isChecked(), true);
+  assert.equal(await page.locator('#sample-rows').innerText(), sampleText); assert.equal(await page.locator('#architecture-label').innerText(), '1 → 2 → 1');
+  assert.equal(await page.locator('#hidden-count').isVisible(), false); check('Explicit fixed mode returns control to the machine in one click without deleting data');
+  const autoBeforePredict = await state(); await page.locator('#predict-mode').click(); await page.locator('#predict-x').fill('0.5'); await page.locator('#predict-form button').click();
+  assert.deepEqual(await state(), autoBeforePredict); check('Prediction preserves autonomous decisions, comparison evidence and structure history');
+  await mobile.locator('#reset').tap(); await mobile.locator('#train-x').fill('1'); await mobile.locator('#train-y').fill('2'); await mobile.locator('#train-form button').tap();
+  assert.equal(await mobile.locator('#auto-structure').isChecked(), true); assert.equal(await mobile.locator('#structure-trials tr').count(), 7);
+  await mobile.locator('#structure-comparison summary').tap();
+  assert.ok(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); await sameRow(mobile);
+  await mobile.locator('#toast').waitFor({ state: 'hidden' });
+  await mobile.locator('.machine-panel').screenshot({ path: path.join(root, 'evidence/automatic-mobile.png') });
+  check('Mobile default automatic training and seven-candidate evidence remain usable at 320px');
   assert.deepEqual(report.errors, []); assert.deepEqual(report.externalRequests, []); check('Zero browser errors and zero external requests');
   report.status = 'passed';
   console.log(`Browser checks: ${report.checks.length} passed; errors: ${report.errors.length}; external requests: ${report.externalRequests.length}`);

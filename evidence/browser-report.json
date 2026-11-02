@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-31T20:10:59.116Z",
+  "date": "2026-11-02T12:53:32.804Z",
   "playwright": "1.62.1",
   "checks": [
     {
@@ -132,6 +132,34 @@
     },
     {
       "id": "I33",
+      "name": "Automatic structure is the default and manual layer/node controls are hidden"
+    },
+    {
+      "id": "I34",
+      "name": "Training examples alone automatically deepen the real model without touching any layer chooser"
+    },
+    {
+      "id": "I35",
+      "name": "Machine decision exposes all seven measured candidates, selected structure and reason"
+    },
+    {
+      "id": "I36",
+      "name": "Corrected simpler examples automatically reduce depth while retaining all samples"
+    },
+    {
+      "id": "I37",
+      "name": "Explicit fixed mode returns control to the machine in one click without deleting data"
+    },
+    {
+      "id": "I38",
+      "name": "Prediction preserves autonomous decisions, comparison evidence and structure history"
+    },
+    {
+      "id": "I39",
+      "name": "Mobile default automatic training and seven-candidate evidence remain usable at 320px"
+    },
+    {
+      "id": "I40",
       "name": "Zero browser errors and zero external requests"
     }
   ],
