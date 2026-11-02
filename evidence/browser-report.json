@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-02T12:53:32.804Z",
+  "date": "2026-11-02T15:10:49.206Z",
   "playwright": "1.62.1",
   "checks": [
     {
@@ -20,11 +20,11 @@
     },
     {
       "id": "I05",
-      "name": "Training learns all samples and automatically changes real network width"
+      "name": "Training learns all samples and automatically selects a real neighboring network structure"
     },
     {
       "id": "I06",
-      "name": "Prediction of 1.5 is 3.05589; weights/samples/epochs unchanged"
+      "name": "Prediction of 1.5 is 3.14886; weights/samples/epochs unchanged"
     },
     {
       "id": "I07",
@@ -140,7 +140,7 @@
     },
     {
       "id": "I35",
-      "name": "Machine decision exposes all seven measured candidates, selected structure and reason"
+      "name": "Machine decision exposes baseline and neighboring measured candidates, selected structure and reason"
     },
     {
       "id": "I36",
@@ -156,10 +156,34 @@
     },
     {
       "id": "I39",
-      "name": "Mobile default automatic training and seven-candidate evidence remain usable at 320px"
+      "name": "Mobile default automatic training and dynamic candidate evidence remain usable at 320px"
     },
     {
       "id": "I40",
+      "name": "Input and output counts are typed freely: 8 inputs and 5 outputs generate every field"
+    },
+    {
+      "id": "I41",
+      "name": "Eight-dimensional learning predicts all five outputs and keeps chosen endpoints fixed"
+    },
+    {
+      "id": "I42",
+      "name": "All five displayed complete functions independently reproduce the five-output prediction"
+    },
+    {
+      "id": "I43",
+      "name": "Invalid counts and unaffordable totals preserve learned state; reapplying the same counts retains samples"
+    },
+    {
+      "id": "I44",
+      "name": "Larger typed dimensions retain all real nodes while diagram folding is explicitly labeled"
+    },
+    {
+      "id": "I45",
+      "name": "Real mobile training accepts 10 typed inputs and 6 outputs; scrollable fields and 320px layout remain usable"
+    },
+    {
+      "id": "I46",
       "name": "Zero browser errors and zero external requests"
     }
   ],

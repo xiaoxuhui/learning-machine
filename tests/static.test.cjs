@@ -27,3 +27,12 @@ test('version appears consistently and server port avoids existing games', () =>
   assert.ok(fs.readFileSync(path.join(root, 'index.html'), 'utf8').includes(`v${version}`));
   assert.ok(fs.readFileSync(path.join(root, 'scripts/serve.mjs'), 'utf8').includes("listen(4319, '127.0.0.1'"));
 });
+
+test('input/output counts are typed integer fields with no dropdown or four-dimensional maximum', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  for (const id of ['input-count', 'output-count']) {
+    const field = html.match(new RegExp(`<input[^>]+id="${id}"[^>]*>`))[0];
+    assert.ok(field.includes('inputmode="numeric"')); assert.ok(!field.includes('max='));
+    assert.ok(!html.includes(`<select id="${id}"`));
+  }
+});
